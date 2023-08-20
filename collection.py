@@ -6,6 +6,7 @@ import numpy as np
 import os
 import datetime
 from tqdm import tqdm
+import util
 
 SEC_TO_MILLI = 1000
 UNIX_DAY = 86400000
@@ -59,15 +60,14 @@ def response_to_csv(response, dir='data', filename=None):
     if len(response) == 0:
         return
     if filename==None:
-        filename = response[0].json()['result']['instrument_name'] + '_candlestick.csv'
-    path = os.path.join(dir, filename)
-    if not os.path.exists(dir):
-        os.mkdir(dir)
+        filename = response[0].json()['result']['instrument_name']
     data = []
     for r in response:
         data.extend(r.json()['result']['data'])
     df = pd.DataFrame(data)
-    df.to_csv(path)
+    if '.csv' not in filename:
+        filename += '.csv'
+    util.df_to_csv(df, filename)
     return filename
 
 
