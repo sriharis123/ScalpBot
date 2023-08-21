@@ -9,6 +9,8 @@ def df_to_csv(df, fname='default.csv'):
         raise AttributeError(f'{fname} not provided or empty')
     if not os.path.exists(DIR):
         os.mkdir(DIR)
+    if '.csv' not in fname:
+        fname += '.csv'
     df.reset_index(drop=True)
     df.to_csv(os.path.join(DIR, fname), index=False)
 
