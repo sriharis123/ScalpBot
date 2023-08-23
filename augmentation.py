@@ -89,14 +89,16 @@ class CandlestickData:
             self.df.loc[:,name] = pband
             self.indicators['bb'].add(name)
 
-    def remove(self, ind, cols=[]):
+    def validate_cols(self, cols=[]):
         if type(cols) != list:
-            print('cols must be a list of strings')
-            return
+            raise AttributeError('cols must be a list of strings')
         for c in cols:
             if c not in list(self.df.columns.values):
-                print(f'col {c} in cols does not exist')
-                return
+                raise AttributeError(f'col {c} in cols does not exist')
+        return True
+
+    def remove(self, ind, cols=[]):
+        self.validate_cols(cols)
         if ind in self.indicators and (cols==[] or cols==None):
             cols = self.indicators[ind]
         self.df.drop(columns=cols, inplace=True)
@@ -113,9 +115,19 @@ class CandlestickData:
     def remove_bb(self, cols=[]):
         self.remove('bb', cols)
 
-    def write_to_file(self):
+    def set_pct_change(self, cols=[], period=1):
+        self.validate_cols(cols)
+        for c in cols:
+            self.df[c] = self.df[c].pct_change(periods=period)
+
+    def to_numpy(self):
+        return self.df.to_numpy()
+
+    def write_to_file(self, name=None, directory=None):
         self.df.reset_index(drop=True)
-        util.df_to_csv(self.df, self.name)
+        name = self.name if name==None else name
+        directory = util.DIR if directory==None else directory
+        util.df_to_csv(self.df, name, directory)
     
 
 
