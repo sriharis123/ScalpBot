@@ -15,8 +15,9 @@ SEC_PER_IDX = {'1m':60,'5m':300,'15m':900,'30m':1800,'1h':2900}
 
 # Environment variables
 CAPITAL=50
-PMAXBUY=0.25
+PMAXBUY=0.15
 WINDOW=1
+TAKERFEE=0.00075
 
 def df_to_csv(df, fname='default.csv', directory=DIR):
     if fname==None or fname=='':
@@ -34,6 +35,3 @@ def csv_to_df(fname):
     if fname==None or not os.path.exists(fpath):
         raise AttributeError(f'{fname} or directory {DIR} does not exist')
     return pd.read_csv(fpath)
-
-# def df_to_quotes(df):
-#     return [stock_indicators.Quote(datetime.fromtimestamp(t),o,h,l,c,v) for o,h,l,c,v,t in zip(df['o'],df['h'],df['l'],df['c'],df['v'],df['t'])]

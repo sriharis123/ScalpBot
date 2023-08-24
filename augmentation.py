@@ -99,10 +99,11 @@ class CandlestickData:
             name = f'{bbname}_{wband.name}'
             self.df.loc[:,name] = wband
             self.indicators['bb'].add(name)
-        if pb:
-            pband = bb.bollinger_pband().clip(0,1)
+        if pb: # standard scaling applied, so that val is not only between 0 and 1.
+            pband = bb.bollinger_pband()#.clip(0,1)
+            scaler = StandardScaler()
             name = f'{bbname}_{pband.name}'
-            self.df.loc[:,name] = pband
+            self.df.loc[:,name] = scaler.fit_transform(pband.to_numpy().reshape(-1,1))
             self.indicators['bb'].add(name)           
 
     def add_pct_change(self, cols=[], period=1):
@@ -150,11 +151,15 @@ class CandlestickData:
     def remove_log_return(self, cols=[]):
         self.remove('lr', cols)
 
+    def dropna(self):
+        self.df.dropna(inplace=True)
+        self.df.reset_index(drop=True, inplace=True)
+
     def to_numpy(self):
         return self.df.to_numpy()
 
     def write_to_file(self, name=None, directory=None):
-        self.df.reset_index(drop=True)
+        self.df.reset_index(drop=True, inplace=True)
         name = self.name if name==None else name
         directory = util.DIR if directory==None else directory
         util.df_to_csv(self.df, name, directory)
@@ -228,7 +233,7 @@ def testpctlr():
 
 # test feature engineering
 def testmulti():
-    dot_usdt = CandlestickData("BTC_USDT_dur_35_end_1691625600000_ts_1m.csv")
+    dot_usdt = CandlestickData("DOT_USDT_dur_35_end_1691625600000_ts_1m.csv")
     
     dot_usdt.add_RSI()
     dot_usdt.add_log_return(cols=['c'], period=1)                           # log return of the close
@@ -236,13 +241,15 @@ def testmulti():
     dot_usdt.add_BB(mov=False, hb=False, lb=False, pb=True)                 # percentB of the bollinger band on close
     dot_usdt.add_BB(ind='c_lr_1', mov=False, hb=False, lb=False, pb=True)   # bollinger bands surrounding log returns
     dot_usdt.add_MACD(mom=False, sig=False)                                 # macd indicator. only shows diff
+    dot_usdt.dropna()
 
     # dot_usdt.remove_bb()
     # dot_usdt.remove_macd()
     # dot_usdt.remove_log_return()
     # dot_usdt.remove_rsi()
-    
-    print(dot_usdt.df.iloc[4000:4040])
+
+    print(dot_usdt.df.iloc[0:40])
 
 # removespec()
-testmulti()
+# testmulti()
+# testema()

@@ -5,7 +5,6 @@ import pandas as pd
 import util
 from sklearn import preprocessing
 from augmentation import CandlestickData
-from collections import Iterable
 
 class SimpleTradingEnvironment:
     """
@@ -21,32 +20,40 @@ class SimpleTradingEnvironment:
     usdt_pbuy: fraction of capital to use for buy
     store_flag: store SARSA info
     """
-    def __init__(self, asset_data: Iterable[CandlestickData], normalize=True, hours_per_rollout=100, ts='1m',
+    def __init__(self, asset_data: list, hours_per_rollout=100, ts='1m',
                  window=util.WINDOW, usdt_capital=util.CAPITAL, usdt_pbuy=util.PMAXBUY, store_flag=1,
                  running_thresh=0.1, usdt_capital_threshold=0.3):
 
-        if type(asset_data) != list or len(asset_data) == 0 or type(asset_data[0]) != pd.Series:
-            raise AttributeError('asset_data expected to be a list of pd.Series')
+        if type(asset_data) != list or len(asset_data) == 0 or type(asset_data[0]) != CandlestickData:
+            raise AttributeError('asset_data expected to be a list of CandlestickData')
 
+        # the initial capital to start every simulation
         self.initial_capital = usdt_capital
+        # the current amount of usdt maintained
         self.usdt_capital = usdt_capital
+        # the current value of all assets maintained
+        self.total_capital = usdt_capital
+        # fraction of capital to use for buy
         self.usdt_pbuy = usdt_pbuy
+        # minimum fraction of initial capital allowable
         self.running_thresh = running_thresh
+        # minimum fraction of initial capital left to execute a trade
         self.usdt_capital_threshold = usdt_capital_threshold
-        self.asset_data = []
 
         for a in asset_data:
-            a.dropna(inplace=True)
-            a.set_pct_change(cols=['v'])
-            a.remove(cols=['t'])
-            self.asset_data.append(a.to_numpy())
+            a.add_RSI()                                                      # measure of volatility
+            a.add_log_return(cols=['c'], period=1)                           # log return of the close
+            a.add_log_return(cols=['c'], period=5)                           # log return of the close. period 5
+            a.add_BB(mov=False, hb=False, lb=False, pb=True)                 # percentB of the bollinger band on close
+            a.add_BB(ind='c_lr_1', mov=False, hb=False, lb=False, pb=True)   # bollinger bands surrounding log returns
+            a.add_MACD(mom=False, sig=False)                                 # macd indicator. only shows diff
+            a.dropna()
+
+        self.asset_data = asset_data
 
         # asset_data[#assets][N][D]
 
-        # if normalize:
-        #     self.asset_data = [preprocessing.StandardScaler().fit_transform(X)]
-        # self.scaler = self.asset_data.scaler
-
+        self.asset_num = 0
         self.current_asset = None
         self.asset_amount_held = 0
 
@@ -59,7 +66,8 @@ class SimpleTradingEnvironment:
         self.action = 0
         self.reward = 0
         self.next_state = None
-        # self.next_action = 0
+        self.cum_rew = 0
+        self.price = 0
 
         self.done = False
 
@@ -74,14 +82,18 @@ class SimpleTradingEnvironment:
         self.usdt_capital = self.initial_capital
         self.asset_amount_held = 0
 
-        self.current_asset = self.asset_data[np.random.randint(0, self.asset_data.shape()[0])]
-        self.timestep = np.random.randint(0, self.asset_data[0])
+        self.asset_num = np.random.randint(0, len(self.asset_data))
+        self.current_asset = self.asset_data[self.asset_num]
+        self.timestep = np.random.randint(0,len(self.current_asset.df.index)-self.rollout_length)
         self.end = self.timestep + self.rollout_length
 
-        self.state = self.get_state(self.timestep)
+        self.state = None
         self.action = 0
         self.reward = 0
-        self.next_state = None
+        self.next_state = self.get_state(self.timestep)
+        self.cum_rew = 0
+        self.price = self.current_asset.df['c'].iloc[self.timestep]
+        # self.next_state = None
         # self.next_action = 0
         
         self.done = False
@@ -92,96 +104,98 @@ class SimpleTradingEnvironment:
                           "running_capital": [],
                           "port_ret": []}
 
-        return self.state
+        return self.next_state
 
     def step(self, action):
-        self.current_act = action
-        self.current_price = self.asset_data.frame.iloc[self.timestep,:]['Adj Close']
-        self.current_reward = self.calculate_reward()
-        self.prev_act = self.current_act
+        self.price = self.current_asset.df['c'].iloc[self.timestep]
+
+        self.state = self.next_state
+        self.action = action
+
+        self.compute_reward()
+
         self.timestep += 1
-        self.next_return, self.current_state = self.get_state(self.timestep)
+        self.next_state = self.get_state(self.timestep)
+
         self.done = self.check_terminal()
 
         if self.done:
             reward_offset = 0
-            ret = (self.store['running_capital'][-1] /
-                   self.store['running_capital'][-0]) - 1
-            if self.timestep < self.terminal_idx:
+            # ret = (self.store['running_capital'][-1] /
+            #        self.store['running_capital'][-0]) - 1
+            if self.timestep < self.terminal_idx: # ran out of money :(
                 reward_offset += -1 * \
                     max(0.5, 1 - self.timestep/self.terminal_idx)
-            if self.store_flag:
-                reward_offset += 10 * ret
-            self.current_reward += reward_offset
+            # if self.store_flag:
+            #     reward_offset += 10 * ret
+            self.reward += reward_offset
 
         if self.store_flag:
-            self.store["action_store"].append(self.current_act)
-            self.store["reward_store"].append(self.current_reward)
-            self.store["running_capital"].append(self.capital)
+            self.store["action_store"].append(self.action)
+            self.store["reward_store"].append(self.reward)
+            self.store["running_capital"].append(self.usdt_capital)
             info = self.store
         else:
             info = None
 
-        return self.current_state, self.current_reward, self.done, info
+        return self.next_state, self.reward, self.done
 
-    def calculate_reward(self):
-        investment = self.running_capital * self.capital_frac
-        reward_offset = 0
-
-        # Buy Action
-        if self.current_act == 1:
-            if self.running_capital > self.initial_cap * self.running_thresh:
-                self.running_capital -= investment
-                asset_units = investment/self.current_price
-                self.asset_amount_held += asset_units
-                self.current_price *= (1 - self.trans_cost)
-
-        # Sell Action
-        elif self.current_act == -1:
+    def compute_reward(self):
+        # reward calculation
+        self.reward = 0.0
+        if self.action == 1:
+            if self.usdt_capital > self.initial_capital * self.usdt_capital_threshold: # if agent has more than 30% money left
+                investment = self.usdt_capital * self.usdt_pbuy
+                self.usdt_capital -= investment
+                self.asset_amount_held += investment*(1-util.TAKERFEE)/self.price # agent gains assets equal to investment usdt
+                self.reward = 0.0 # abs(self.action) * state[-2]
+            else:
+                self.reward = -0.1
+        elif self.action == -1:
             if self.asset_amount_held > 0:
-                self.running_capital += self.asset_amount_held * \
-                    self.current_price * (1 - self.trans_cost)
+                self.usdt_capital += self.asset_amount_held*(1-util.TAKERFEE)*self.price
                 self.asset_amount_held = 0
-
-        # Do Nothing
-        elif self.current_act == 0:
-            if self.prev_act == 0:
-                reward_offset += -0.1
-            pass
-
-        # Reward to give
-        prev_cap = self.capital
-        self.capital = self.running_capital + \
-            (self.asset_amount_held) * self.current_price
-        reward = 100*(self.next_return) * self.current_act - \
-            np.abs(self.current_act - self.prev_act) * self.trans_cost
-        if self.store_flag == 1:
-            self.store['port_ret'].append((self.capital - prev_cap)/prev_cap)
-
-        if reward < 0:
-            # To make the Agent more risk averse towards negative returns.
-            reward *= NEG_MUL
-        reward += reward_offset
-
-        return reward
+                self.reward = (np.log(self.total_capital)-np.log(self.initial_capital))
+            else:
+                reward = -0.1
+        if self.reward < 0:
+            self.reward *= 2 # double negative rewards
+        self.cum_rew += self.reward
 
     def check_terminal(self):
-        if self.timestep == self.terminal_idx:
+        if self.timestep == self.end:
             return True
-        elif self.capital <= self.initial_cap * self.usdt_capital_threshold:
+        elif self.usdt_capital <= self.initial_capital * self.running_thresh:
             return True
         else:
             return False
 
     def get_state(self, idx):
-        # state = self.asset_data[idx][1:]
-        # state = self.scaler.transform(state.reshape(1, -1))
 
-        ## [state[close, macd, rsi, bb], total return %, existing capital %, unrealized return %, previous action]
-        # state = np.concatenate([state, [[self.capital/self.initial_cap,
-        #                                  self.running_capital/self.capital,
-        #                                  self.asset_amount_held * self.current_price/self.initial_cap,
-        #                                  self.prev_act]]], axis=-1)
+        self.total_capital = self.usdt_capital + self.asset_amount_held * self.price # capital + asset_held * closing_price
 
-        # next_ret = self.asset_data[idx][0]
+        state = np.concatenate([self.current_asset.df.iloc[idx][6:], np.array([ \
+                np.log(self.total_capital)-np.log(self.initial_capital), \
+                np.log(self.usdt_capital)-np.log(self.initial_capital) # , self.total_capital, self.usdt_capital, self.asset_amount_held, self.price
+                ])])[:,np.newaxis]
+
         return state
+
+
+def testenv():
+    s = SimpleTradingEnvironment(asset_data=[CandlestickData('DOT_USDT_dur_35_end_1691625600000_ts_1m.csv')])
+    s.reset()
+    print(s.step(1))
+    print(s.total_capital)
+    print(s.price)
+    print(s.step(0))
+    for i in range(4000):
+        s.step(0)
+    print(s.step(0))
+    print(s.price)
+    print(s.step(-1))
+    print(s.total_capital)
+    print(s.next_state)
+    print(s.cum_rew)
+
+testenv()
