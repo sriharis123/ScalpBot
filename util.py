@@ -16,8 +16,12 @@ SEC_PER_IDX = {'1m':60,'5m':300,'15m':900,'30m':1800,'1h':2900}
 # Environment variables
 CAPITAL=50
 PMAXBUY=0.15
-WINDOW=1
+WINDOW=4
 TAKERFEE=0.00075
+
+# Agent variables
+STATE_DIM=8*WINDOW
+ACTION_DIM=3
 
 def df_to_csv(df, fname='default.csv', directory=DIR):
     if fname==None or fname=='':

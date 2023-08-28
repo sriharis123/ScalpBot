@@ -10,8 +10,7 @@ class SimpleTradingEnvironment:
     """
     Trading Environment for trading a single asset, one buy/sell at a time.
     The Agent interacts with the environment class through the step() function.
-    State Space: {o, h, l, c, v%, rsi, [macd], [bb]}[i-window+1:i+1]
-    Action Space: {-1: Sell, 0: Do Nothing, 1: Buy}
+    Action Space: { 0: Do Nothing, 1: Buy, 2: Sell}
     """
 
     """
@@ -47,6 +46,8 @@ class SimpleTradingEnvironment:
             a.add_BB(mov=False, hb=False, lb=False, pb=True)                 # percentB of the bollinger band on close
             a.add_BB(ind='c_lr_1', mov=False, hb=False, lb=False, pb=True)   # bollinger bands surrounding log returns
             a.add_MACD(mom=False, sig=False)                                 # macd indicator. only shows diff
+            # a.clip(cols=['BB_20_2_c_bbipband', 'BB_20_2_c_lr_1_bbipband'], divide=2)
+            # a.clip(cols=['MACD_diff_12_26_c_diff'], divide=3)                # clip macd and bb bands to avoid inf/nan losses
             a.dropna()
 
         self.asset_data = asset_data
@@ -84,13 +85,15 @@ class SimpleTradingEnvironment:
 
         self.asset_num = np.random.randint(0, len(self.asset_data))
         self.current_asset = self.asset_data[self.asset_num]
-        self.timestep = np.random.randint(0,len(self.current_asset.df.index)-self.rollout_length)
+        self.timestep = np.random.randint(self.window,len(self.current_asset.df.index)-self.rollout_length)
         self.end = self.timestep + self.rollout_length
 
         self.state = None
         self.action = 0
         self.reward = 0
-        self.next_state = self.get_state(self.timestep)
+        self.next_state = []#self.get_state(self.timestep)
+        for i in range(self.window-1,-1,-1):
+            self.next_state.append(self.get_state(self.timestep - self.window))
         self.cum_rew = 0
         self.price = self.current_asset.df['c'].iloc[self.timestep]
         # self.next_state = None
@@ -109,13 +112,14 @@ class SimpleTradingEnvironment:
     def step(self, action):
         self.price = self.current_asset.df['c'].iloc[self.timestep]
 
-        self.state = self.next_state
+        self.state = self.next_state.copy()
         self.action = action
 
         self.compute_reward()
 
         self.timestep += 1
-        self.next_state = self.get_state(self.timestep)
+        self.next_state.pop(0)
+        self.next_state.append(self.get_state(self.timestep))
 
         self.done = self.check_terminal()
 
@@ -123,9 +127,9 @@ class SimpleTradingEnvironment:
             reward_offset = 0
             # ret = (self.store['running_capital'][-1] /
             #        self.store['running_capital'][-0]) - 1
-            if self.timestep < self.terminal_idx: # ran out of money :(
+            if self.timestep < self.end: # ran out of money :(
                 reward_offset += -1 * \
-                    max(0.5, 1 - self.timestep/self.terminal_idx)
+                    max(0.5, 1 - self.timestep/self.end)
             # if self.store_flag:
             #     reward_offset += 10 * ret
             self.reward += reward_offset
@@ -151,15 +155,17 @@ class SimpleTradingEnvironment:
                 self.reward = 0.0 # abs(self.action) * state[-2]
             else:
                 self.reward = -0.1
-        elif self.action == -1:
+        elif self.action == 2:
             if self.asset_amount_held > 0:
                 self.usdt_capital += self.asset_amount_held*(1-util.TAKERFEE)*self.price
                 self.asset_amount_held = 0
                 self.reward = (np.log(self.total_capital)-np.log(self.initial_capital))
             else:
-                reward = -0.1
-        if self.reward < 0:
-            self.reward *= 2 # double negative rewards
+                self.reward = -0.1
+        else:
+            self.reward = -0.001
+        # if self.reward > 0:
+        #     self.reward *= 2 # double pos rewards
         self.cum_rew += self.reward
 
     def check_terminal(self):
@@ -172,7 +178,7 @@ class SimpleTradingEnvironment:
 
     def get_state(self, idx):
 
-        self.total_capital = self.usdt_capital + self.asset_amount_held * self.price # capital + asset_held * closing_price
+        self.total_capital = self.usdt_capital + self.asset_amount_held * self.current_asset.df['c'].iloc[idx] # capital + asset_held * closing_price
 
         state = np.concatenate([self.current_asset.df.iloc[idx][6:], np.array([ \
                 np.log(self.total_capital)-np.log(self.initial_capital), \
@@ -193,9 +199,9 @@ def testenv():
         s.step(0)
     print(s.step(0))
     print(s.price)
-    print(s.step(-1))
+    print(s.step(2))
     print(s.total_capital)
     print(s.next_state)
     print(s.cum_rew)
 
-testenv()
+# testenv()

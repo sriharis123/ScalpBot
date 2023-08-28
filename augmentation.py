@@ -119,6 +119,11 @@ class CandlestickData:
             self.df[f'{c}_lr_{period}'] = np.log(self.df[c]) - np.log(self.df[c].shift(period))
             self.indicators['lr'].add(f'{c}_lr_{period}')
 
+    def clip(self, cols=[], low=-1, high=1, divide=1):
+        self.validate_cols(cols, True)
+        for c in cols:
+            self.df[c] = (self.df[c] / divide).clip(low, high)
+
     def validate_cols(self, cols=[], check_empty=False):
         if type(cols) != list or (check_empty and len(cols) == 0):
             raise AttributeError('cols must be a non-empty list of strings')
@@ -241,6 +246,8 @@ def testmulti():
     dot_usdt.add_BB(mov=False, hb=False, lb=False, pb=True)                 # percentB of the bollinger band on close
     dot_usdt.add_BB(ind='c_lr_1', mov=False, hb=False, lb=False, pb=True)   # bollinger bands surrounding log returns
     dot_usdt.add_MACD(mom=False, sig=False)                                 # macd indicator. only shows diff
+    dot_usdt.clip(cols=['BB_20_2_c_bbipband', 'BB_20_2_c_lr_1_bbipband'], divide=2)
+    dot_usdt.clip(cols=['MACD_diff_12_26_c_diff'], divide=3)
     dot_usdt.dropna()
 
     # dot_usdt.remove_bb()
