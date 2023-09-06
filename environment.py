@@ -69,6 +69,7 @@ class SimpleTradingEnvironment:
         self.next_state = None
         self.cum_rew = 0
         self.price = 0
+        self.cost_basis = 0
 
         self.done = False
 
@@ -85,19 +86,16 @@ class SimpleTradingEnvironment:
 
         self.asset_num = np.random.randint(0, len(self.asset_data))
         self.current_asset = self.asset_data[self.asset_num]
-        self.timestep = np.random.randint(self.window,len(self.current_asset.df.index)-self.rollout_length)
-        self.end = self.timestep + self.rollout_length
+        self.timestep = int(np.random.randint(self.window,len(self.current_asset.df.index)-self.rollout_length))
+        self.end = int(self.timestep + self.rollout_length)
 
         self.state = None
         self.action = 0
         self.reward = 0
-        self.next_state = []#self.get_state(self.timestep)
-        for i in range(self.window-1,-1,-1):
-            self.next_state.append(self.get_state(self.timestep - self.window))
+        self.next_state = [self.get_state(self.timestep - self.window) for i in range(self.window-1,-1,-1)]
         self.cum_rew = 0
         self.price = self.current_asset.df['c'].iloc[self.timestep]
-        # self.next_state = None
-        # self.next_action = 0
+        self.cost_basis = 0
         
         self.done = False
 
@@ -107,7 +105,7 @@ class SimpleTradingEnvironment:
                           "running_capital": [],
                           "port_ret": []}
 
-        return self.next_state
+        return self.next_state, self.current_asset.df.iloc[self.timestep:self.end]
 
     def step(self, action):
         self.price = self.current_asset.df['c'].iloc[self.timestep]
@@ -151,19 +149,28 @@ class SimpleTradingEnvironment:
             if self.usdt_capital > self.initial_capital * self.usdt_capital_threshold: # if agent has more than 30% money left
                 investment = self.usdt_capital * self.usdt_pbuy
                 self.usdt_capital -= investment
+                self.cost_basis *= self.asset_amount_held
                 self.asset_amount_held += investment*(1-util.TAKERFEE)/self.price # agent gains assets equal to investment usdt
-                self.reward = 0.0 # abs(self.action) * state[-2]
+                self.cost_basis = (self.cost_basis + investment*(1-util.TAKERFEE)) / self.asset_amount_held
+                # self.asset_amount_held += investment*(1-util.TAKERFEE)/self.price # agent gains assets equal to investment usdt
+                self.reward = np.log(self.price) - np.log(self.cost_basis) # abs(self.action) * state[-2]
             else:
-                self.reward = -0.1
+                self.reward = -0.1 # invalid action
         elif self.action == 2:
             if self.asset_amount_held > 0:
                 self.usdt_capital += self.asset_amount_held*(1-util.TAKERFEE)*self.price
                 self.asset_amount_held = 0
-                self.reward = (np.log(self.total_capital)-np.log(self.initial_capital))
+                self.reward = (np.log(self.total_capital)-np.log(self.initial_capital)) + (np.log(self.price)-np.log(self.cost_basis))*50
+                self.cost_basis = 0
             else:
-                self.reward = -0.1
+                self.reward = -0.1 # invalid action
         else:
-            self.reward = -0.001
+            if self.cost_basis != 0:
+                self.reward = np.log(self.price) - np.log(self.cost_basis)
+            else:
+                self.reward = -0.001 # disincentivize no action
+        # else:
+        #     self.reward = -0.001
         # if self.reward > 0:
         #     self.reward *= 2 # double pos rewards
         self.cum_rew += self.reward
@@ -182,7 +189,8 @@ class SimpleTradingEnvironment:
 
         state = np.concatenate([self.current_asset.df.iloc[idx][6:], np.array([ \
                 np.log(self.total_capital)-np.log(self.initial_capital), \
-                np.log(self.usdt_capital)-np.log(self.initial_capital) # , self.total_capital, self.usdt_capital, self.asset_amount_held, self.price
+                # np.log(self.usdt_capital)-np.log(self.initial_capital) # , self.total_capital, self.usdt_capital, self.asset_amount_held, self.price
+                (0 if self.cost_basis == 0 else np.log(self.price) - np.log(self.cost_basis))
                 ])])[:,np.newaxis]
 
         return state

@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 from datetime import datetime
+import plotly.graph_objects as go
 
 DIR = 'data'
 
@@ -16,7 +17,7 @@ SEC_PER_IDX = {'1m':60,'5m':300,'15m':900,'30m':1800,'1h':2900}
 # Environment variables
 CAPITAL=50
 PMAXBUY=0.15
-WINDOW=4
+WINDOW=8
 TAKERFEE=0.00075
 
 # Agent variables
@@ -39,3 +40,12 @@ def csv_to_df(fname):
     if fname==None or not os.path.exists(fpath):
         raise AttributeError(f'{fname} or directory {DIR} does not exist')
     return pd.read_csv(fpath)
+
+def visualize_go(df):
+    fig = go.Figure(data=[go.Candlestick(x=df['t'],
+                    open=df['o'],
+                    high=df['h'],
+                    low=df['l'],
+                    close=df['c'])])
+
+    fig.show()
