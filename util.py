@@ -15,6 +15,11 @@ INSTRUMENTS = ['BTC_USDT','ETH_USDT','XRP_USDT','DOGE_USDT','ADA_USDT','SOL_USDT
 REQ_COUNTS = {"1m":288, "5m":288, "15m":96, "30m":48, "1h":24}
 SEC_PER_IDX = {'1m':60,'5m':300,'15m':900,'30m':1800,'1h':2900}
 
+# Forecasting variables
+N_TRAIN = 300
+N_TEST = 30
+N_PREDICT = 120
+
 # Environment variables
 CAPITAL=50
 PMAXBUY=0.15
@@ -59,6 +64,6 @@ def visualize_go(df, markers=[]):
                     high=df['h'],
                     low=df['l'],
                     close=df['c']))
-                    
+
     fig = go.Figure(data)
     fig.show()

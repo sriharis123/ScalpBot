@@ -5,13 +5,18 @@ from ta.volatility import BollingerBands
 from ta.trend import ema_indicator, MACD
 from ta.momentum import rsi
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from pmdarima import arima
+from pmdarima.pipeline import Pipeline
+from pmdarima.preprocessing import LogEndogTransformer
 import util
+import plotly.graph_objects as go
 
 class CandlestickData:
 
     def __init__(self, fname):
         self.df = util.csv_to_df(fname)
         self.name = fname
+        self.close_np = np.empty((0))
         self.indicators = {'ema': set(), 'macd': set(), 'rsi': set(), 'bb': set(), 'pct': set(), 'lr': set()}
         for ind in self.indicators:
             for col in list(self.df.columns.values):
@@ -119,10 +124,37 @@ class CandlestickData:
             self.df[f'{c}_lr_{period}'] = np.log(self.df[c]) - np.log(self.df[c].shift(period))
             self.indicators['lr'].add(f'{c}_lr_{period}')
 
+    def add_future_lr(self, cols=[], periods=[1]):
+        self.validate_cols(cols, True)
+        periods.sort()
+        for c in cols:
+            frames = pd.DataFrame()
+            future_name = f'flr_{c}_{len(periods)}'
+            for p in periods:
+                frames[p] = np.log(self.df[c].shift(-p)) - np.log(self.df[c])
+            self.df[future_name] = frames[frames.columns[::-1]].ewm(span=len(periods), axis=1, adjust=False).mean()[0]
+        
+
     def clip(self, cols=[], low=-1, high=1, divide=1):
         self.validate_cols(cols, True)
         for c in cols:
-            self.df[c] = (self.df[c] / divide).clip(low, high)
+            self.df[c] = (self.df[c] / divide).clip(low, high) / 2 + 0.5
+
+    # Doesn't really work. Prediction is too linear
+    def forecast_arima(self, predict_idx, col='c', return_gt=False):
+        self.validate_cols([col])
+        if self.close_np.shape == (0,):
+            self.close_np = self.df['c'].to_numpy()
+        train = self.close_np[predict_idx - (util.N_TRAIN + util.N_TEST):predict_idx - util.N_TEST]
+        test = self.close_np[predict_idx - util.N_TEST:predict_idx]
+        pipe = Pipeline([('log', LogEndogTransformer()), ('arima', arima.ARIMA(order=(10,0,20)))])
+
+        pipe.fit(train)
+        preds = pipe.predict(util.N_PREDICT + util.N_TEST, return_conf_int=False)
+        
+        if return_gt:
+            return self.close_np[predict_idx-(util.N_TRAIN + util.N_TEST):predict_idx + util.N_PREDICT], preds
+        return preds[util.N_TEST:]
 
     def validate_cols(self, cols=[], check_empty=False):
         if type(cols) != list or (check_empty and len(cols) == 0):
@@ -244,10 +276,10 @@ def testmulti():
     dot_usdt.add_log_return(cols=['c'], period=1)                           # log return of the close
     dot_usdt.add_log_return(cols=['c'], period=5)                           # log return of the close. period 5
     dot_usdt.add_BB(mov=False, hb=False, lb=False, pb=True)                 # percentB of the bollinger band on close
-    dot_usdt.add_BB(ind='c_lr_1', mov=False, hb=False, lb=False, pb=True)   # bollinger bands surrounding log returns
+    dot_usdt.add_BB(ind='c_lr_5', mov=False, hb=False, lb=False, pb=True)   # bollinger bands surrounding log returns
     dot_usdt.add_MACD(mom=False, sig=False)                                 # macd indicator. only shows diff
-    dot_usdt.clip(cols=['BB_20_2_c_bbipband', 'BB_20_2_c_lr_1_bbipband'], divide=2)
-    dot_usdt.clip(cols=['MACD_diff_12_26_c_diff'], divide=3)
+    # dot_usdt.clip(cols=['BB_20_2_c_bbipband', 'BB_20_2_c_lr_1_bbipband'], divide=2)
+    # dot_usdt.clip(cols=['MACD_diff_12_26_c_diff'], divide=3)
     dot_usdt.dropna()
 
     # dot_usdt.remove_bb()
@@ -256,7 +288,50 @@ def testmulti():
     # dot_usdt.remove_rsi()
 
     print(dot_usdt.df.iloc[0:40])
+    util.visualize_go(dot_usdt.df.iloc[0:40])
+
+def testfore():
+    dot_usdt = CandlestickData("DOT_USDT_dur_35_end_1691625600000_ts_1m.csv")
+    trainset, forecast = dot_usdt.forecast_arima(1000, return_gt=True)
+    print(trainset.shape, forecast.shape)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=np.arange(util.N_PREDICT + util.N_TEST + util.N_TRAIN),
+        y=trainset,
+        connectgaps=True
+    ))
+    fig.add_trace(go.Scatter(
+        x=np.arange(start=util.N_TRAIN, stop=util.N_TRAIN + util.N_TEST + util.N_PREDICT),
+        y=forecast,
+        connectgaps=True
+    ))
+    fig.show()
+
+def test_logreturns_ema():
+    dot_usdt = CandlestickData("DOT_USDT_dur_35_end_1691625600000_ts_1m.csv")
+
+    dot_usdt.add_EMA(ema_window=20)
+    dot_usdt.add_future_lr(cols=['ema_20_c'], periods=np.arange(200))
+
+    df = dot_usdt.df.iloc[1000:3000]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df['t'],
+        y=df['ema_20_c'],
+        connectgaps=True
+    ))
+    fig.add_trace(go.Scatter(
+        x=df['t'],
+        y=df['flr_ema_20_c_200'] + df['ema_20_c'],
+        connectgaps=True
+    ))
+    fig.show()
+
+
 
 # removespec()
 # testmulti()
 # testema()
+# testfore()
+test_logreturns_ema()
