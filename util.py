@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import os
 from datetime import datetime
 import plotly.graph_objects as go
@@ -23,6 +24,7 @@ TAKERFEE=0.00075
 # Agent variables
 STATE_DIM=8*WINDOW
 ACTION_DIM=3
+LR_LAMBDA = lambda epoch: 0.95 ** (epoch//50)
 
 def df_to_csv(df, fname='default.csv', directory=DIR):
     if fname==None or fname=='':
@@ -41,11 +43,22 @@ def csv_to_df(fname):
         raise AttributeError(f'{fname} or directory {DIR} does not exist')
     return pd.read_csv(fpath)
 
-def visualize_go(df):
-    fig = go.Figure(data=[go.Candlestick(x=df['t'],
+def visualize_go(df, markers=[]):
+    data = []
+    if len(markers):
+        markers = np.array(markers)
+        idx = np.where(markers!=0)[0]
+        data.append(go.Scatter(x=df['t'].iloc[idx],
+                    y=df['c'].iloc[idx],
+                    mode="markers",
+                    marker_color=np.select([df['t'].iloc[idx].mask(markers[idx]!=1,0)>0, df['t'].iloc[idx].mask(markers[idx]!=2,0)>0], ["orange", "purple"], "rgba(0,0,0,0)"),
+                    marker_size=8))
+
+    data.append(go.Candlestick(x=df['t'],
                     open=df['o'],
                     high=df['h'],
                     low=df['l'],
-                    close=df['c'])])
-
+                    close=df['c']))
+                    
+    fig = go.Figure(data)
     fig.show()
