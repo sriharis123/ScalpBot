@@ -24,92 +24,100 @@ class CandlestickData:
                     self.indicators[ind].add(col)
         print('currently existing indicators:',self.indicators)
 
-    def add_EMA(self, ema_window=12, ind='c'):
-        name = f'ema_{ema_window}_{ind}'
-        if name in self.indicators['ema']:
-            print(f'{name} already exists in {self.name}')
-            return
-        ema = ema_indicator(self.df[ind], window=ema_window, fillna=True)
-        self.indicators['ema'].add(name)
-        self.df.loc[:,name] = ema
+    def add_EMA(self, cols=['c'], ema_window=12):
+        self.validate_cols(cols, True)
+        for c in cols:
+            name = f'ema_{ema_window}_{c}'
+            if name in self.indicators['ema']:
+                print(f'{name} already exists in {self.name}')
+                return
+            ema = ema_indicator(self.df[c], window=ema_window, fillna=True)
+            self.indicators['ema'].add(name)
+            self.df.loc[:,name] = ema
         
-    def add_RSI(self, rsi_window=14, ind='c'):
-        name = f'rsi_{rsi_window}_{ind}'
-        if name in self.indicators['rsi']:
-            print(f'{name} already exists in {self.name}')
-            return
-        rser = rsi(self.df[ind], window=rsi_window, fillna=True) / 100.0
-        self.indicators['rsi'].add(name)
-        self.df.loc[:,name] = rser
+    def add_RSI(self, cols=['c'], rsi_window=14):
+        self.validate_cols(cols, True)
+        for c in cols:
+            name = f'rsi_{rsi_window}_{c}'
+            if name in self.indicators['rsi']:
+                print(f'{name} already exists in {self.name}')
+                return
+            rser = rsi(self.df[c], window=rsi_window, fillna=True) / 100.0
+            self.indicators['rsi'].add(name)
+            self.df.loc[:,name] = rser
 
     # should this be normalized? currently standard scale
-    def add_MACD(self, window_fast=12, window_slow=26, window_sign=9, ind='c', mom=True, sig=True, dif=True):
-        if (not mom or mom and f'MACD_{window_fast}_{window_slow}_{ind}' in self.indicators['macd']) \
-                and (not sig or sig and f'MACD_{window_fast}_{window_slow}_{ind}_sign' in self.indicators['macd']) \
-                and (not dif or dif and f'MACD_{window_fast}_{window_slow}_{ind}_diff' in self.indicators['macd']) :
-            print(f'MACD_{window_fast}_{window_slow}_{ind} already exists in {self.name}')
-            return
-        macd = MACD(self.df[ind], window_fast=window_fast, window_slow=window_slow, window_sign=window_sign, fillna=True)
-        scaler = StandardScaler()
-        if mom:
-            name = f'MACD_{window_fast}_{window_slow}_{ind}'
-            mser = macd.macd()
-            mser = scaler.fit_transform(mser.to_numpy().reshape(-1,1))
-            self.df.loc[:,name] = mser
-            self.indicators['macd'].add(name)
-        if sig:
-            name = f'MACD_{window_fast}_{window_slow}_{ind}_sign'
-            signal = macd.macd_signal()
-            signal = scaler.fit_transform(signal.to_numpy().reshape(-1,1))
-            self.df.loc[:,name] = signal
-            self.indicators['macd'].add(name)
-        if dif:
-            name = f'MACD_diff_{window_fast}_{window_slow}_{ind}_diff'
-            diff = macd.macd_diff()
-            diff = scaler.fit_transform(diff.to_numpy().reshape(-1,1))
-            self.df.loc[:,name] = diff
-            self.indicators['macd'].add(name)
+    def add_MACD(self, cols=['c'], window_fast=12, window_slow=26, window_sign=9, mom=True, sig=True, dif=True):
+        self.validate_cols(cols, True)
+        for c in cols:
+            if (not mom or mom and f'MACD_{window_fast}_{window_slow}_{c}' in self.indicators['macd']) \
+                    and (not sig or sig and f'MACD_{window_fast}_{window_slow}_{c}_sign' in self.indicators['macd']) \
+                    and (not dif or dif and f'MACD_{window_fast}_{window_slow}_{c}_diff' in self.indicators['macd']) :
+                print(f'MACD_{window_fast}_{window_slow}_{c} already exists in {self.name}')
+                return
+            macd = MACD(self.df[c], window_fast=window_fast, window_slow=window_slow, window_sign=window_sign, fillna=True)
+            scaler = StandardScaler()
+            if mom:
+                name = f'MACD_{window_fast}_{window_slow}_{c}'
+                mser = macd.macd()
+                mser = scaler.fit_transform(mser.to_numpy().reshape(-1,1))
+                self.df.loc[:,name] = mser
+                self.indicators['macd'].add(name)
+            if sig:
+                name = f'MACD_{window_fast}_{window_slow}_{c}_sign'
+                signal = macd.macd_signal()
+                signal = scaler.fit_transform(signal.to_numpy().reshape(-1,1))
+                self.df.loc[:,name] = signal
+                self.indicators['macd'].add(name)
+            if dif:
+                name = f'MACD_diff_{window_fast}_{window_slow}_{c}_diff'
+                diff = macd.macd_diff()
+                diff = scaler.fit_transform(diff.to_numpy().reshape(-1,1))
+                self.df.loc[:,name] = diff
+                self.indicators['macd'].add(name)
 
     """
     ind: indicator to use (default: close price)
     pb: apply percent calculation on cur price vs bands. useful for normalization.
     """
-    def add_BB(self, window=20, std=2, ind='c', mov=True, hb=True, lb=True, wb=False, pb=False):
-        bbname = f'BB_{window}_{std}_{ind}'
-        if (not mov or mov and f'{bbname}_mavg' in self.indicators['bb']) \
-                and (not hb or hb and f'{bbname}_hband' in self.indicators['bb']) \
-                and (not lb or lb and f'{bbname}_lband' in self.indicators['bb']) \
-                and (not wb or wb and f'{bbname}_bbiwband' in self.indicators['bb']) \
-                and (not pb or pb and f'{bbname}_bbipband' in self.indicators['bb']) :
-            print(f'{bbname} already exists in {self.name}')
-            return
-        bb = BollingerBands(self.df[ind], window=window, window_dev=std, fillna=True)
-        if mov:
-            bbser = bb.bollinger_mavg()
-            name = f'{bbname}_{bbser.name}'
-            self.df.loc[:,name] = bbser
-            self.indicators['bb'].add(name)
-        if hb:
-            hband = bb.bollinger_hband()
-            name = f'{bbname}_{hband.name}'
-            self.df.loc[:,name] = hband
-            self.indicators['bb'].add(name)
-        if lb:
-            lband = bb.bollinger_lband()
-            name = f'{bbname}_{lband.name}'
-            self.df.loc[:,name] = lband
-            self.indicators['bb'].add(name)
-        if wb:
-            wband = bb.bollinger_wband()
-            name = f'{bbname}_{wband.name}'
-            self.df.loc[:,name] = wband
-            self.indicators['bb'].add(name)
-        if pb: # standard scaling applied, so that val is not only between 0 and 1.
-            pband = bb.bollinger_pband()#.clip(0,1)
-            scaler = StandardScaler()
-            name = f'{bbname}_{pband.name}'
-            self.df.loc[:,name] = scaler.fit_transform(pband.to_numpy().reshape(-1,1))
-            self.indicators['bb'].add(name)           
+    def add_BB(self, cols=['c'], window=20, std=2, mov=True, hb=True, lb=True, wb=False, pb=False):
+        self.validate_cols(cols, True)
+        for c in cols:
+            bbname = f'BB_{window}_{std}_{c}'
+            if (not mov or mov and f'{bbname}_mavg' in self.indicators['bb']) \
+                    and (not hb or hb and f'{bbname}_hband' in self.indicators['bb']) \
+                    and (not lb or lb and f'{bbname}_lband' in self.indicators['bb']) \
+                    and (not wb or wb and f'{bbname}_bbiwband' in self.indicators['bb']) \
+                    and (not pb or pb and f'{bbname}_bbipband' in self.indicators['bb']) :
+                print(f'{bbname} already exists in {self.name}')
+                return
+            bb = BollingerBands(self.df[c], window=window, window_dev=std, fillna=True)
+            if mov:
+                bbser = bb.bollinger_mavg()
+                name = f'{bbname}_{bbser.name}'
+                self.df.loc[:,name] = bbser
+                self.indicators['bb'].add(name)
+            if hb:
+                hband = bb.bollinger_hband()
+                name = f'{bbname}_{hband.name}'
+                self.df.loc[:,name] = hband
+                self.indicators['bb'].add(name)
+            if lb:
+                lband = bb.bollinger_lband()
+                name = f'{bbname}_{lband.name}'
+                self.df.loc[:,name] = lband
+                self.indicators['bb'].add(name)
+            if wb:
+                wband = bb.bollinger_wband()
+                name = f'{bbname}_{wband.name}'
+                self.df.loc[:,name] = wband
+                self.indicators['bb'].add(name)
+            if pb: # standard scaling applied, so that val is not only between 0 and 1.
+                pband = bb.bollinger_pband()#.clip(0,1)
+                scaler = StandardScaler()
+                name = f'{bbname}_{pband.name}'
+                self.df.loc[:,name] = scaler.fit_transform(pband.to_numpy().reshape(-1,1))
+                self.indicators['bb'].add(name)
 
     def add_pct_change(self, cols=[], period=1):
         self.validate_cols(cols, True)
@@ -124,16 +132,21 @@ class CandlestickData:
             self.df[f'{c}_lr_{period}'] = np.log(self.df[c]) - np.log(self.df[c].shift(period))
             self.indicators['lr'].add(f'{c}_lr_{period}')
 
-    def add_future_lr(self, cols=[], periods=[1]):
+    def add_future_lr(self, cols=[], periods=np.arange(1,201,4)):
         self.validate_cols(cols, True)
         periods.sort()
         for c in cols:
             frames = pd.DataFrame()
-            future_name = f'flr_{c}_{len(periods)}'
+            future_name = f'flr_{c}'
             for p in periods:
                 frames[p] = np.log(self.df[c].shift(-p)) - np.log(self.df[c])
-            self.df[future_name] = frames[frames.columns[::-1]].ewm(span=len(periods), axis=1, adjust=False).mean()[0]
-        
+            self.df[future_name] = frames[frames.columns[::-1]].ewm(span=len(periods), axis=1, adjust=False).mean()[periods[0]]
+
+    def minmax_scale(self, cols=[], mini=-1, maxi=1):
+        self.validate_cols(cols, check_empty=True)
+        for c in cols:
+            scaler = MinMaxScaler(feature_range=(mini, maxi))
+            self.df[c] = scaler.fit_transform(self.df[c].to_numpy().reshape(-1,1))
 
     def clip(self, cols=[], low=-1, high=1, divide=1):
         self.validate_cols(cols, True)
@@ -164,10 +177,10 @@ class CandlestickData:
                 raise AttributeError(f'col {c} in cols does not exist')
         return True
 
-    def remove(self, ind, cols=[]):
+    def remove(self, ind='', cols=[]):
         self.validate_cols(cols, False)
-        if ind in self.indicators and (cols==[] or cols==None):
-            cols = self.indicators[ind]
+        if ind in self.indicators:
+            cols.extend(list(self.indicators[ind]))
         self.df.drop(columns=cols, inplace=True)
 
     def remove_ema(self, cols=[]):
@@ -200,15 +213,36 @@ class CandlestickData:
         name = self.name if name==None else name
         directory = util.DIR if directory==None else directory
         util.df_to_csv(self.df, name, directory)
-    
+
+# pass in candlestick data. outputs scaled EMA, RSI, WB, MACD, FLR
+def engineer_PR(data=[], clean=False):
+    for asset in data:
+        # add
+        asset.add_RSI()
+        asset.add_EMA(ema_window=20)
+        asset.add_log_return(cols=['c'], period=5)
+        asset.add_EMA(cols=['c_lr_5'], ema_window=60)
+        asset.add_future_lr(cols=['ema_20_c'])
+        asset.add_MACD(mom=False, sig=False)
+        asset.add_BB(mov=False, hb=False, lb=False, pb=True, wb=True)
+        asset.minmax_scale(cols=['MACD_diff_12_26_c_diff', 'flr_ema_20_c', 'BB_20_2_c_bbipband', 'ema_60_c_lr_5'])
+        asset.minmax_scale(mini=0, cols=['BB_20_2_c_bbiwband', 'rsi_14_c'])
+        asset.add_EMA(cols=['rsi_14_c', 'BB_20_2_c_bbipband', 'BB_20_2_c_bbiwband'], ema_window=5)
+        asset.dropna()
+
+        # remove
+        if clean:
+            asset.remove(cols=['rsi_14_c', 'ema_20_c', 'c_lr_5', 'BB_20_2_c_bbiwband', 'BB_20_2_c_bbipband'])
+   
 
 
 def testema():
     ada_usdt = CandlestickData("ADA_USDT_dur_35_end_1691625600000_ts_1m.csv")
-    ada_usdt.add_EMA(20)
+    ada_usdt.add_EMA(ema_window=20)
     print(ada_usdt.df.iloc[:20])
-    ada_usdt.add_EMA(20)
+    ada_usdt.add_EMA(ema_window=20)
     ada_usdt.write_to_file()
+    print(ada_usdt.df.columns)
     ada_usdt.remove_ema()
     print(ada_usdt.df.iloc[:20])
     ada_usdt.write_to_file()
@@ -271,24 +305,58 @@ def testpctlr():
 # test feature engineering
 def testmulti():
     dot_usdt = CandlestickData("DOT_USDT_dur_35_end_1691625600000_ts_1m.csv")
-    
-    dot_usdt.add_RSI()
-    dot_usdt.add_log_return(cols=['c'], period=1)                           # log return of the close
-    dot_usdt.add_log_return(cols=['c'], period=5)                           # log return of the close. period 5
-    dot_usdt.add_BB(mov=False, hb=False, lb=False, pb=True)                 # percentB of the bollinger band on close
-    dot_usdt.add_BB(ind='c_lr_5', mov=False, hb=False, lb=False, pb=True)   # bollinger bands surrounding log returns
-    dot_usdt.add_MACD(mom=False, sig=False)                                 # macd indicator. only shows diff
-    # dot_usdt.clip(cols=['BB_20_2_c_bbipband', 'BB_20_2_c_lr_1_bbipband'], divide=2)
-    # dot_usdt.clip(cols=['MACD_diff_12_26_c_diff'], divide=3)
-    dot_usdt.dropna()
 
-    # dot_usdt.remove_bb()
-    # dot_usdt.remove_macd()
-    # dot_usdt.remove_log_return()
-    # dot_usdt.remove_rsi()
+    engineer_PR([dot_usdt], clean=True)
+    dot_usdt.df=dot_usdt.df[3000:4000]
 
-    print(dot_usdt.df.iloc[0:40])
-    util.visualize_go(dot_usdt.df.iloc[0:40])
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=dot_usdt.df['t'],
+        open=dot_usdt.df['o'],
+        high=dot_usdt.df['h'],
+        low=dot_usdt.df['l'],
+        close=dot_usdt.df['c'],
+        name='CANDLES'
+    ))
+    fig.add_trace(go.Scatter(
+        x=dot_usdt.df['t'],
+        y=dot_usdt.df['flr_ema_20_c'],
+        connectgaps=True,
+        name='FLR'
+    ))
+    fig.add_trace(go.Scatter(
+        x=dot_usdt.df['t'],
+        y=dot_usdt.df['ema_60_c_lr_5'],
+        connectgaps=True,
+        name='CLR'
+    ))
+    fig.add_trace(go.Scatter(
+        x=dot_usdt.df['t'],
+        y=dot_usdt.df['ema_5_rsi_14_c'],
+        connectgaps=True,
+        name='RSI'
+    ))
+    fig.add_trace(go.Scatter(
+        x=dot_usdt.df['t'],
+        y=dot_usdt.df['ema_5_BB_20_2_c_bbipband'],
+        connectgaps=True,
+        name='BBPB'
+    ))
+    fig.add_trace(go.Scatter(
+        x=dot_usdt.df['t'],
+        y=dot_usdt.df['ema_5_BB_20_2_c_bbiwband'],
+        connectgaps=True,
+        name='BBWB'
+    ))
+    fig.add_trace(go.Scatter(
+        x=dot_usdt.df['t'],
+        y=dot_usdt.df['MACD_diff_12_26_c_diff'],
+        connectgaps=True,
+        name='MACD'
+    ))
+    fig.show()
+
+    # print(dot_usdt.df.iloc[0:40])
+    # util.visualize_go(dot_usdt.df.iloc[0:40])
 
 def testfore():
     dot_usdt = CandlestickData("DOT_USDT_dur_35_end_1691625600000_ts_1m.csv")
@@ -311,19 +379,17 @@ def test_logreturns_ema():
     dot_usdt = CandlestickData("DOT_USDT_dur_35_end_1691625600000_ts_1m.csv")
 
     dot_usdt.add_EMA(ema_window=20)
-    dot_usdt.add_future_lr(cols=['ema_20_c'], periods=np.arange(200))
-
-    df = dot_usdt.df.iloc[1000:3000]
+    dot_usdt.add_future_lr(cols=['ema_20_c'], periods=np.arange(1,201,4))
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=df['t'],
-        y=df['ema_20_c'],
+        x=dot_usdt.df['t'],
+        y=dot_usdt.df['ema_20_c'],
         connectgaps=True
     ))
     fig.add_trace(go.Scatter(
-        x=df['t'],
-        y=df['flr_ema_20_c_200'] + df['ema_20_c'],
+        x=dot_usdt.df['t'],
+        y=dot_usdt.df['flr_ema_20_c'] + dot_usdt.df['ema_20_c'],
         connectgaps=True
     ))
     fig.show()
@@ -332,6 +398,6 @@ def test_logreturns_ema():
 
 # removespec()
 # testmulti()
-# testema()
+# test_logreturns_ema()
 # testfore()
-test_logreturns_ema()
+# test_logreturns_ema()
